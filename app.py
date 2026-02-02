@@ -92,7 +92,9 @@ def processar_e_enviar(df, db_config):
             EXECUTE BLOCK (
                 gtin VARCHAR(14) = ?, nome VARCHAR(80) = ?, preco NUMERIC(18,2) = ?
             ) AS BEGIN
-              IF (NOT EXISTS (SELECT 1 FROM PRODUTO WHERE CODIGO_BARRA_PRO = :gtin)) THEN
+            /* 1. Tenta inserir se não existir */
+            IF (NOT EXISTS (SELECT 1 FROM PRODUTO WHERE CODIGO_BARRA_PRO = :gtin)) THEN
+            BEGIN
                 INSERT INTO PRODUTO (
                     CODIGO_BARRA_PRO, TP_PRODUTO, TP_PRODUCAO, ESTOQUE_MINIMO, 
                     NOME_PRO, DESC_CUPOM, COD_MARC, COD_SEC, COD_GRUP, COD_SGRUP, 
@@ -106,12 +108,20 @@ def processar_e_enviar(df, db_config):
                     0, 9999, '2099-01-01', 0, 
                     'N', 'S'
                 );
-              ELSE
-                UPDATE PRODUTO SET 
-                    NOME_PRO = :nome, 
-                    DESC_CUPOM = :nome,
-                    PRECO_VAREJO = :preco
-                WHERE CODIGO_BARRA_PRO = :gtin;
+            END
+            ELSE
+            BEGIN
+                /* 2. Se existir, verifica se NÃO é o código 99 antes de atualizar */
+                /* Usamos 13 dígitos pois é o padrão que você definiu no preenchimento (zfill) */
+                IF (:gtin <> '0000000000099') THEN
+                BEGIN
+                    UPDATE PRODUTO SET 
+                        NOME_PRO = :nome, 
+                        DESC_CUPOM = :nome,
+                        PRECO_VAREJO = :preco
+                    WHERE CODIGO_BARRA_PRO = :gtin;
+                END
+            END
             END
             """
             
@@ -181,22 +191,20 @@ with tab3:
     try:
         conn = fdb.connect(host=db_host, database=db_path, user=db_user, password=db_pw, charset='WIN1252')
         cur = conn.cursor()
-        cur.execute("SELECT COD_SEC, NOME_SEC FROM SECAO ORDER BY NOME_SEC")
+        cur.execute("SELECT COD_SEC, NOME_SEC FROM SECAO WHERE COD_SEC <> 1 ORDER BY NOME_SEC")
         secoes_db = cur.fetchall()
         dict_secoes = {f"{r[0]} - {r[1]}": r[0] for r in secoes_db}
     except Exception as e:
         st.error(f"Erro ao conectar ao banco para carregar seções: {e}")
         dict_secoes = {}
 
-    # --- 2. INTERFACE DE CADASTRO (FORA DO FORM PARA REATIVIDADE) ---
+    # --- 2. INTERFACE DE CADASTRO ---
     if dict_secoes:
-        # Seleção de seção e tipo de data (Reativos: mudam a tela na hora)
-        secao_nome = st.selectbox("Selecione a Seção", options=list(dict_secoes.keys()))
+        secao_nome = st.selectbox("Selecione a Seção para Nova Regra", options=list(dict_secoes.keys()))
         cod_sec_selecionado = dict_secoes[secao_nome]
         
         tipo_promo = st.radio("Tipo de Promoção", ["Recorrente (Dias da Semana)", "Data Fixa (Calendário)"], horizontal=True)
 
-        # Formulário apenas para os dados variáveis e o botão
         with st.form("confirmar_cadastro"):
             dias_string = ""
             data_fixa = None
@@ -228,9 +236,7 @@ with tab3:
 
     st.divider()
 
-    # --- 3. LISTAGEM DE PROMOÇÕES ATIVAS ---
-    st.subheader("📋 Promoções Cadastradas")
-    
+    # --- 3. LISTAGEM E AÇÕES ---
     try:
         cur.execute("""
             SELECT R.ID, S.NOME_SEC, R.DIAS_SEMANA, R.DATA_FIXA, R.STATUS, R.COD_SEC 
@@ -240,57 +246,87 @@ with tab3:
         """)
         regras = cur.fetchall()
 
-        # --- LISTAGEM COM ATIVAÇÃO/DESATIVAÇÃO E EXCLUSÃO SEGURA ---
+        # CORREÇÃO AQUI: de 'colegas' para 'regras'
         if regras:
+            st.subheader("📋 Promoções Ativas e Agendadas")
+            
             for r in regras:
                 id_regra, nome_sec, dias, data, status, cod_sec = r
-                col1, col2, col3 = st.columns([3, 2, 1])
                 
-                with col1:
-                    st.write(f"**{nome_sec}**")
-                    st.caption(f"{'🗓️ ' + str(data) if data else '🔁 Dias: ' + dias}")
-                
-                with col2:
-                    if status == 'NORMAL':
-                        if st.button(f"🚀 Ativar", key=f"at_{id_regra}"):
-                            try:
-                                # 1. Roda a Procedure no Banco
+                with st.expander(f"{'🚀' if status == 'PROMO' else '⏳'} {nome_sec} (ID: {id_regra})"):
+                    col_info, col_grid_btn, col_actions = st.columns([2, 1, 1])
+                    
+                    with col_info:
+                        if data:
+                            st.write(f"📅 **Data Fixa:** {data.strftime('%d/%m/%Y')}")
+                        else:
+                            # Tradução visual dos dias para o usuário
+                            mapa_nomes = {"0":"Dom","1":"Seg","2":"Ter","3":"Qua","4":"Qui","5":"Sex","6":"Sab"}
+                            dias_formatados = ", ".join([mapa_nomes.get(d, d) for d in dias.split(",")])
+                            st.write(f"🔁 **Dias:** {dias_formatados}")
+                        st.write(f"**Status Atual:** `{status}`")
+
+                    with col_grid_btn:
+                        if st.button(f"🔍 Ver Produtos", key=f"grid_{id_regra}"):
+                            cur.execute("""
+                                SELECT 
+                                    CODIGO_BARRA_PRO as "Cód. Barras",
+                                    NOME_PRO as "Produto",
+                                    PRECO_VAREJO as "Preço Varejo",
+                                    PRECO_PROMOCAO as "Preço Promo",
+                                    PROMO_ATIVA as "Ativa"
+                                FROM PRODUTO 
+                                WHERE COD_SEC = ?
+                                ORDER BY NOME_PRO
+                            """, (cod_sec,))
+                            
+                            # Criando o DataFrame
+                            df_produtos = pd.DataFrame(cur.fetchall(), 
+                                                    columns=["Cód. Barras", "Produto", "Preço Varejo", "Preço Promo", "Ativa"])
+                            
+                            st.write(f"### Itens da Seção: {nome_sec}")
+                            
+                            # Exibindo o Grid com ajuste de largura de colunas
+                            st.dataframe(
+                                df_produtos, 
+                                use_container_width=True, 
+                                hide_index=True,
+                                column_config={
+                                    "Cód. Barras": st.column_config.TextColumn("Cód. Barras"),
+                                    "Produto": st.column_config.TextColumn("Descrição do Produto"),
+                                    "Preço Varejo": st.column_config.NumberColumn("Varejo (R$)", format="%.2f"),
+                                    "Preço Promo": st.column_config.NumberColumn("Promo (R$)", format="%.2f"),
+                                    "Ativa": st.column_config.TextColumn("Status")
+                                }
+                            )
+
+                    with col_actions:
+                        # Botão Ativar/Desativar conforme status atual
+                        if status == 'NORMAL':
+                            if st.button("🚀 Ativar", key=f"at_{id_regra}", use_container_width=True):
                                 cur.execute("EXECUTE PROCEDURE SP_ATIVAR_PROMO_SECAO(?)", (cod_sec,))
-                                # 2. Atualiza o Status da Regra
                                 cur.execute("UPDATE REGRAS_PROMOCAO SET STATUS = 'PROMO' WHERE ID = ?", (id_regra,))
                                 conn.commit()
-                                st.success(f"Promoção Ativada: {nome_sec}")
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao ativar: {e}")
-                    else:
-                        if st.button(f"🛑 Desativar", key=f"de_{id_regra}"):
-                            try:
-                                # 1. Roda a Procedure de volta ao normal
+                        else:
+                            if st.button("🛑 Desativar", key=f"de_{id_regra}", use_container_width=True, type="primary"):
                                 cur.execute("EXECUTE PROCEDURE SP_DESATIVAR_PROMO_SECAO(?)", (cod_sec,))
-                                # 2. Atualiza Status
                                 cur.execute("UPDATE REGRAS_PROMOCAO SET STATUS = 'NORMAL' WHERE ID = ?", (id_regra,))
                                 conn.commit()
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao desativar: {e}")
-                
-                with col3:
-                    # AJUSTE 3: Excluir rodando a desativação antes
-                    if st.button("🗑️", key=f"del_{id_regra}"):
-                        try:
-                            # Sempre tenta normalizar os preços antes de deletar a regra
+                        
+                        # Botão Excluir
+                        if st.button("🗑️ Excluir", key=f"del_{id_regra}", use_container_width=True):
+                            # Sempre desativa os produtos antes de apagar a regra
                             cur.execute("EXECUTE PROCEDURE SP_DESATIVAR_PROMO_SECAO(?)", (cod_sec,))
                             cur.execute("DELETE FROM REGRAS_PROMOCAO WHERE ID = ?", (id_regra,))
                             conn.commit()
-                            st.warning(f"Regra excluída e preços normalizados.")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao excluir: {e}")
+
         else:
             st.info("Nenhuma promoção agendada.")
-
+            
         cur.close()
         conn.close()
     except Exception as e:
-        st.error(f"Erro ao listar promoções: {e}")
+        st.error(f"Erro ao carregar promoções: {e}")
