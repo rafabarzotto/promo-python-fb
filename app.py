@@ -90,34 +90,33 @@ def processar_e_enviar(df, db_config):
             # Se existir, UPDATE (apenas campos necessários, ignorando COD_SEC)
             sql = """
             EXECUTE BLOCK (
-                id_pro INTEGER = ?, gtin VARCHAR(14) = ?, nome VARCHAR(80) = ?, preco NUMERIC(18,2) = ?
+                gtin VARCHAR(14) = ?, nome VARCHAR(80) = ?, preco NUMERIC(18,2) = ?
             ) AS BEGIN
               IF (NOT EXISTS (SELECT 1 FROM PRODUTO WHERE CODIGO_BARRA_PRO = :gtin)) THEN
                 INSERT INTO PRODUTO (
-                    COD_PRO, CODIGO_BARRA_PRO, TP_PRODUTO, TP_PRODUCAO, ESTOQUE_MINIMO, 
+                    CODIGO_BARRA_PRO, TP_PRODUTO, TP_PRODUCAO, ESTOQUE_MINIMO, 
                     NOME_PRO, DESC_CUPOM, COD_MARC, COD_SEC, COD_GRUP, COD_SGRUP, 
                     COD_UNI_ENT, COD_UNI_SAI, PRECO_VAREJO, PRECO_PROMOCAO, PRECO_PRAZO, 
                     MARGEM_LUCRO, QUANT_ESTOQ, DATA_VALIDADE, DIAS_VALIDADE_PRO, 
-                    CONTROLA_ESTOQUE_PRO, ATIVO_PRO, PRECO_NORMAL
+                    CONTROLA_ESTOQUE_PRO, ATIVO_PRO
                 ) VALUES (
-                    :id_pro, :gtin, 'GERAL', 'GERAL', 99, 
+                    :gtin, 'GERAL', 'GERAL', 99, 
                     :nome, :nome, 1, 1, 1, 1, 
                     2, 2, :preco, 0, 0, 
                     0, 9999, '2099-01-01', 0, 
-                    'N', 'S', :preco
+                    'N', 'S'
                 );
               ELSE
                 UPDATE PRODUTO SET 
                     NOME_PRO = :nome, 
                     DESC_CUPOM = :nome,
-                    PRECO_VAREJO = :preco,
-                    PRECO_NORMAL = :preco
+                    PRECO_VAREJO = :preco
                 WHERE CODIGO_BARRA_PRO = :gtin;
             END
             """
             
             # Passamos apenas 4 parâmetros agora, pois o bloco reutiliza as variáveis :gtin, :nome, etc.
-            cur.execute(sql, (row[cols[0]], gtin_final, desc_limpa, preco_raw))
+            cur.execute(sql, (gtin_final, desc_limpa, preco_raw))
             
             count += 1
             progress_bar.progress(count / len(df))
@@ -140,10 +139,10 @@ with tab2:
     st.header("Configuração do Banco de Dados Firebird")
     col1, col2 = st.columns(2)
     with col1:
-        db_host = st.text_input("IP do Servidor", value="192.168.3.34")
+        db_host = st.text_input("IP do Servidor", value="localhost")
         db_user = st.text_input("Usuário", value="SYSDBA")
     with col2:
-        db_path = st.text_input("Caminho do Banco (ex: D:\\MERCADO\\1.FDB)", value="")
+        db_path = st.text_input("Caminho do Banco (ex: D:\\MERCADO\\1.FDB)", value="C:\\Windows\\en-BR\\ESTOQUE.FDB")
         db_pw = st.text_input("Senha", type="password", value="masterkey")
 
 with tab1:

@@ -85,4 +85,4 @@ def gerar_sql_firebird(arquivo_csv, arquivo_saida):
     print(f"Sucesso! Arquivo '{arquivo_saida}' gerado com {len(comandos_sql)} linhas.")
 
 # Chamada do script
-gerar_sql_firebird('produtos.csv', 'importacao_firebase.sql')
+gerar_sql_firebird('31012026.csv', 'importacao_firebase.sql')
