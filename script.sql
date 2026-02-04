@@ -6,8 +6,11 @@ CREATE TABLE REGRAS_PROMOCAO (
     COD_SEC INTEGER NOT NULL, -- Agora referenciando Sessão
     DIAS_SEMANA VARCHAR(20),
     DATA_FIXA DATE,
-    STATUS VARCHAR(10) DEFAULT 'NORMAL'
+    STATUS VARCHAR(10) DEFAULT 'NORMAL',
+    AUTOMATICO CHAR(1) DEFAULT 'N'
 );
+
+ALTER TABLE REGRAS_PROMOCAO ADD AUTOMATICO CHAR(1) DEFAULT 'N';
 
 -- 2. Criar o Generator (o contador)
 CREATE GENERATOR GEN_REGRAS_PROMOCAO_ID;
@@ -67,7 +70,7 @@ BEGIN
 
     -- Busca regras que batem com hoje (Data Fixa OU Dia da Semana) e estão inativas
     FOR SELECT COD_SEC FROM REGRAS_PROMOCAO 
-        WHERE STATUS = 'NORMAL' 
+        WHERE STATUS = 'NORMAL' AND AUTOMATICO = 'S' 
         AND (DATA_FIXA = CURRENT_DATE OR DIAS_SEMANA LIKE '%' || :VAR_DIA_SEM || '%')
         INTO :VAR_SEC
     DO
@@ -91,7 +94,7 @@ BEGIN
 
     -- Busca regras que estão como 'PROMO' mas NÃO deveriam estar ativas hoje
     FOR SELECT COD_SEC FROM REGRAS_PROMOCAO 
-        WHERE STATUS = 'PROMO'
+        WHERE STATUS = 'PROMO' AND AUTOMATICO = 'S'
         AND (
             (DATA_FIXA IS NOT NULL AND DATA_FIXA <> CURRENT_DATE) OR 
             (DIAS_SEMANA IS NOT NULL AND DIAS_SEMANA NOT LIKE '%' || :VAR_DIA_SEM || '%')
