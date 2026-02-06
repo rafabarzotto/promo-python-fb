@@ -49,6 +49,20 @@ CREATE TABLE IF NOT EXISTS produtos_cloud (
 -- Índice para busca rápida
 CREATE INDEX idx_busca_cloud ON produtos_cloud(descricao);
 
+CREATE TABLE IF NOT EXISTS status_sincronizacao (
+    mercado_id INT PRIMARY KEY,
+    status VARCHAR(20) DEFAULT 'LIVRE', -- 'LIVRE' ou 'OCUPADO'
+    ultima_sincronizacao DATETIME,
+    maquina_bloqueio VARCHAR(100),      -- Quem está travando?
+    data_bloqueio DATETIME,             -- Quando travou? (Para soltar se travar por timeout)
+    ip_bloqueio VARCHAR(20)
+);
+
+-- Insere os registros iniciais para os mercados que você tem (1 e 2)
+INSERT IGNORE INTO status_sincronizacao (mercado_id, status) VALUES (1, 'LIVRE');
+INSERT IGNORE INTO status_sincronizacao (mercado_id, status) VALUES (2, 'LIVRE');
+
 select * from regras_promocao;
 select * from regras_promocao_itens;
 SELECT * FROM produtos_cloud;
+SELECT * FROM status_sincronizacao;
