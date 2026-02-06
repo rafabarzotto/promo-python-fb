@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS regras_promocao_itens (
     id_regra INT NOT NULL,
     codigo_barras VARCHAR(20) NOT NULL, -- Importante ser VARCHAR para o EAN
     preco_promo DECIMAL(10,2),
+    removido CHAR(1) DEFAULT 'N',
     
     -- Chave Estrangeira com Delete Cascade 
     -- (se apagar a regra, apaga os itens automaticamente)
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS regras_promocao_itens (
 CREATE INDEX idx_promo_mercado ON regras_promocao(mercado_id);
 CREATE INDEX idx_promo_datas ON regras_promocao(data_inicio, data_fim);
 CREATE INDEX idx_itens_gtin ON regras_promocao_itens(codigo_barras);
+CREATE INDEX idx_itens_removido ON regras_promocao_itens(removido);
+ALTER TABLE regras_promocao_itens 
+ADD UNIQUE INDEX idx_regra_produto (id_regra, codigo_barras);
 
 
 CREATE TABLE IF NOT EXISTS produtos_cloud (
