@@ -66,6 +66,18 @@ CREATE TABLE IF NOT EXISTS status_sincronizacao (
 INSERT IGNORE INTO status_sincronizacao (mercado_id, status) VALUES (1, 'LIVRE');
 INSERT IGNORE INTO status_sincronizacao (mercado_id, status) VALUES (2, 'LIVRE');
 
+CREATE TABLE controle_versoes (
+    id INT PRIMARY KEY,
+    ultima_atualizacao_produtos DATETIME,
+    quem_atualizou VARCHAR(50) -- Opcional: para saber quem foi
+);
+
+-- Inicializa o registro
+INSERT INTO controle_versoes (id, ultima_atualizacao_produtos, quem_atualizou) 
+VALUES (1, NOW(), 'SISTEMA');
+INSERT INTO controle_versoes (id, ultima_atualizacao_produtos, quem_atualizou) 
+VALUES (2, NOW(), 'SISTEMA');
+
 select * from regras_promocao;
 select * from regras_promocao_itens;
 SELECT * FROM produtos_cloud;
